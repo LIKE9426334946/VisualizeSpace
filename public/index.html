@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f7f8fb">
+  <meta name="description" content="在三维空间里观察向量，探索矩阵变换、坐标和运动轨迹。">
+  <title>VisualizeSpace · 三维向量实验室</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <svg class="svg-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16m-3-11v6"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></symbol>
+    <symbol id="i-fit" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15.5A9 9 0 0 1 8.5 4 9 9 0 1 0 20 15.5Z"/></symbol>
+    <symbol id="i-full" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+  </defs></svg>
+  <header class="app-header">
+    <div class="brand"><img src="/favicon.svg" alt="" width="35" height="35"><div><h1>Visualize<span>Space</span></h1><p>三维向量实验室</p></div></div>
+    <div class="header-note"><span class="live-dot"></span>让矩阵变换，看得见</div>
+    <div class="header-actions">
+      <span id="save-status" class="save-status">自动保存在此浏览器</span>
+      <button id="theme" class="icon-button" aria-label="切换深色模式" title="切换深色模式"><svg><use href="#i-moon"/></svg></button>
+      <button id="fullscreen" class="icon-button" aria-label="进入全屏" title="全屏"><svg><use href="#i-full"/></svg></button>
+    </div>
+  </header>
+  <main class="workspace" id="workspace">
+    <aside class="sidebar" id="sidebar" aria-label="向量与变换设置">
+      <div class="sidebar-heading"><div><span class="eyebrow">EXPERIMENT</span><h2>定义你的空间</h2></div><span class="dimension-badge">3D</span></div>
+      <section class="control-section">
+        <div class="section-title"><h3><span class="step-number">01</span>输入向量</h3><span id="vector-count" class="tag">5 × 3</span></div>
+        <label for="vectors" class="field-caption">向量矩阵 X <span>每行一个 [x, y, z]</span></label>
+        <div class="editor-wrap"><div class="editor-axis">x <span>y</span> z</div><textarea id="vectors" spellcheck="false" aria-describedby="vector-help" rows="5">2, 1, 1
+1, 3, 2
+-2, 1, 2
+-1, -2, 1
+2, -2, 3</textarea></div>
+        <p class="input-help" id="vector-help">支持空格、逗号分隔，或粘贴二维 JSON 数组。</p>
+        <div class="quick-examples" aria-label="向量示例"><button data-example="default">示例向量</button><button data-example="basis">单位基向量</button><button data-example="cube">立方体顶点</button></div>
+      </section>
+      <section class="control-section">
+        <div class="section-title"><h3><span class="step-number">02</span>变换矩阵</h3><span class="tag">3 × 3</span></div>
+        <label class="sr-only" for="preset">选择变换示例</label>
+        <select id="preset"><option value="rotateZ">绕 Z 轴旋转 45°</option><option value="rotateX">绕 X 轴旋转 90°</option><option value="scale">非均匀缩放</option><option value="shear">沿 X 方向剪切</option><option value="project">投影到 XY 平面</option><option value="identity">单位矩阵</option><option value="custom" disabled>自定义矩阵</option></select>
+        <div class="matrix-equation"><span class="matrix-name">M =</span><div class="matrix-grid" id="matrix-grid" aria-label="三乘三变换矩阵"></div></div>
+        <label for="convention" class="field-caption">乘法约定</label>
+        <select id="convention"><option value="row">行向量右乘 · X′ = X M</option><option value="column">列向量左乘 · v′ = M v</option></select>
+        <div class="formula-note" id="formula-note">每行是一个向量；适合观察 X @ M 的结果。</div>
+        <button id="apply" class="primary-button">应用变换 <svg><use href="#i-arrow"/></svg></button>
+        <p id="input-status" class="input-status" role="status" aria-live="polite">拖动画面，从不同角度观察。</p>
+      </section>
+      <section class="control-section display-section">
+        <div class="section-title"><h3><span class="step-number">03</span>显示设置</h3></div>
+        <label class="toggle-row"><span>原点到点的连线<small>向量箭头</small></span><input id="show-rays" type="checkbox" role="switch" checked><span class="switch" aria-hidden="true"></span></label>
+        <label class="toggle-row"><span>运动轨迹</span><input id="show-trails" type="checkbox" role="switch" checked><span class="switch" aria-hidden="true"></span></label>
+        <label class="toggle-row"><span>原始位置</span><input id="show-original" type="checkbox" role="switch" checked><span class="switch" aria-hidden="true"></span></label>
+        <label class="toggle-row"><span>坐标标签</span><input id="show-labels" type="checkbox" role="switch" checked><span class="switch" aria-hidden="true"></span></label>
+        <label class="toggle-row"><span>坐标网格</span><input id="show-grid" type="checkbox" role="switch" checked><span class="switch" aria-hidden="true"></span></label>
+      </section>
+      <div class="sidebar-footer"><span class="small-dot"></span>本地计算 · 无需上传数据</div>
+    </aside>
+    <div class="main-panel">
+      <section class="scene-card" id="scene-card" aria-label="三维向量空间">
+        <div class="scene-toolbar">
+          <div class="scene-heading"><button id="toggle-sidebar" class="icon-button" aria-label="隐藏控制面板" aria-expanded="true" aria-controls="sidebar" title="隐藏/显示控制面板"><svg><use href="#i-panel"/></svg></button><span>三维空间</span><span class="scene-divider"></span><span class="projection-label">正交视图</span></div>
+          <div class="view-controls" aria-label="观察方向"><button data-view="iso" class="active" aria-pressed="true">3D</button><button data-view="xy" aria-pressed="false">XY</button><button data-view="xz" aria-pressed="false">XZ</button><button data-view="yz" aria-pressed="false">YZ</button><button id="fit" title="适应全部向量" aria-label="适应全部向量"><svg><use href="#i-fit"/></svg></button></div>
+        </div>
+        <div class="canvas-wrap" id="canvas-wrap">
+          <canvas id="space" tabindex="0" role="img" aria-label="三维向量图。拖动旋转，滚轮缩放，右键拖动平移。键盘方向键旋转，加减号缩放，Home 复位。坐标也显示在下方表格中。"></canvas>
+          <div class="scene-meta"><span class="eyebrow">VECTOR SPACE</span><h2>从一个位置，到另一个位置。</h2><div class="scene-legend"><span><i class="legend-original"></i>起点</span><span><i class="legend-current"></i>当前位置</span><span><i class="legend-target"></i>终点</span><span><i class="legend-trail"></i>轨迹</span></div></div>
+          <div class="scene-info"><span id="scene-count">5 个向量</span><span id="grid-unit">网格 1 单位</span></div>
+          <div class="zoom-controls"><button id="zoom-in" aria-label="放大" title="放大">+</button><button id="zoom-out" aria-label="缩小" title="缩小">−</button><button id="reset-camera" aria-label="复位视角" title="复位视角"><svg><use href="#i-reset"/></svg></button></div>
+          <div class="gesture-hint"><span>拖动旋转</span><b>·</b><span>滚轮缩放</span><b>·</b><span>右键平移</span><span class="touch-hint">单指旋转 · 双指缩放 / 平移</span></div>
+          <div id="tooltip" class="tooltip" hidden></div>
+        </div>
+        <div class="timeline">
+          <button id="play" class="play-button" aria-label="播放变换"><span id="play-icon" aria-hidden="true">▶</span></button>
+          <button id="restart" class="icon-button" title="回到起点" aria-label="回到起点"><svg><use href="#i-reset"/></svg></button>
+          <div class="timeline-track"><div class="timeline-label"><label for="progress">变换进度</label><output id="progress-value" for="progress">100%</output></div><input id="progress" type="range" min="0" max="1000" value="1000"><div class="timeline-ends"><span>原始位置</span><span>变换后位置</span></div></div>
+          <label class="speed-control"><span>速度</span><select id="speed" aria-label="播放速度"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
+        </div>
+        <div class="interpolation-note">轨迹：p(t) = (1 − t)p₀ + tp₁ <span>· 起点到终点的直线插值，旋转矩阵也使用此过渡方式</span></div>
+      </section>
+      <section class="results-card" aria-label="坐标结果">
+        <div class="results-header"><div><h2>坐标一览 <span id="result-count">5</span></h2><p>点击任意一行，在空间中突出显示该向量。</p></div><div class="det-badge">det(M) <strong id="determinant">1</strong></div></div>
+        <div class="table-wrap"><table><thead><tr><th scope="col">向量</th><th scope="col">原始坐标 <span>p₀</span></th><th scope="col">当前位置 <span>p(t)</span></th><th scope="col">变换后坐标 <span>p₁</span></th><th scope="col">长度变化</th></tr></thead><tbody id="results"></tbody></table></div>
+      </section>
+    </div>
+  </main>
+  <noscript><p>请开启 JavaScript 以使用三维向量交互功能。</p></noscript>
+</body>
+</html>

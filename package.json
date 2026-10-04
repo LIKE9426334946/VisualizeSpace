@@ -1,0 +1,13 @@
+{
+  "name": "visualize-space",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "三维向量与矩阵变换可视化",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node backend/server.js",
+    "test": "node --test tests/*.test.js",
+    "check": "node --check backend/server.js && node --check public/math.js && node --check public/space.js && node --check public/app.js"
+  }
+}
