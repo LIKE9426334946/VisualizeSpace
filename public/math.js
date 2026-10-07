@@ -41,6 +41,13 @@ export function transform(vector, matrix, convention = 'row') {
 export const interpolate = (a, b, t) => a.map((value, i) => value + (b[i] - value) * t);
 export const magnitude = v => Math.hypot(...v);
 export const dot = (a, b) => a.reduce((sum, value, i) => sum + value * b[i], 0);
+export function dotMetrics(a, b) {
+  const value = dot(a, b), lengthA = magnitude(a), lengthB = magnitude(b);
+  // 零向量的夹角没有定义；先归一化再点乘，避免长度乘积下溢。
+  const cosine = lengthA === 0 || lengthB === 0 ? null
+    : Math.max(-1, Math.min(1, dot(a.map(n => n / lengthA), b.map(n => n / lengthB))));
+  return { value, angle: cosine === null ? null : Math.acos(cosine) * 180 / Math.PI };
+}
 export const determinant = m => m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
 export function format(value) {
   if (Math.abs(value) < 1e-10) return '0';
@@ -75,6 +82,17 @@ export function project(point, camera, width, height) {
     y: height / 2 + camera.panY - dot(point, b.up) * camera.scale,
     depth: dot(point, b.back)
   };
+}
+// 鼠标位移反投影到经过端点、平行于屏幕的平面，保持观察深度不变。
+export function dragVector(vector, dx, dy, camera) {
+  const { right, up } = cameraBasis(camera.yaw, camera.pitch);
+  const delta = vector.map((_, i) => (right[i] * dx - up[i] * dy) / camera.scale);
+  let fraction = 1;
+  delta.forEach((d, i) => {
+    if (d > 0) fraction = Math.min(fraction, (1e6 - vector[i]) / d);
+    if (d < 0) fraction = Math.min(fraction, (-1e6 - vector[i]) / d);
+  });
+  return vector.map((value, i) => value + delta[i] * Math.max(0, fraction));
 }
 export function gridStep(radius) {
   const raw = Math.max(radius, 1e-12) / 5;

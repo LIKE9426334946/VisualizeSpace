@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseVectors, validateMatrix, transform, interpolate, presetMatrix, determinant, project, cameraBasis, dot, gridStep } from '../public/math.js';
+import { parseVectors, validateMatrix, transform, interpolate, presetMatrix, determinant, project, cameraBasis, dot, gridStep, dragVector, dotMetrics } from '../public/math.js';
 
 const close = (actual, expected) => actual.forEach((n, i) => assert.ok(Math.abs(n - expected[i]) < 1e-9, `${actual} ≠ ${expected}`));
 
@@ -67,4 +67,26 @@ test('大量向量、极大和极小坐标下数值与网格保持有限', () =>
   for (const radius of [0, 1e-12, 0.1, 1, 1e6, 1e12]) assert.ok(Number.isFinite(gridStep(radius)) && gridStep(radius) > 0);
   const result = transform([1e6, -1e6, 1e6], [[1e6, 0, 0], [0, 1e6, 0], [0, 0, 1e6]]);
   close(result, [1e12, -1e12, 1e12]);
+});
+
+test('点积与夹角覆盖锐角、垂直、反向和零向量', () => {
+  assert.equal(dotMetrics([2, 0, 0], [1, 2, 0]).value, 2);
+  assert.ok(Math.abs(dotMetrics([2, 0, 0], [1, 2, 0]).angle - 63.4349488229) < 1e-8);
+  assert.deepEqual(dotMetrics([1, 0, 0], [0, 3, 0]), { value: 0, angle: 90 });
+  assert.deepEqual(dotMetrics([2, 0, 0], [-3, 0, 0]), { value: -6, angle: 180 });
+  assert.deepEqual(dotMetrics([0, 0, 0], [1, 2, 3]), { value: 0, angle: null });
+  assert.equal(dotMetrics([1e-200, 0, 0], [0, 1e-200, 0]).angle, 90);
+});
+
+test('端点反投影跟随鼠标且保持深度，三个正视图分别保留第三个坐标', () => {
+  const vector = [2, -1, 3];
+  for (const [yaw, pitch, unchanged] of [[-0.8, 0.5, -1], [-Math.PI / 2, Math.PI / 2, 2], [-Math.PI / 2, 0, 1], [0, 0, 0]]) {
+    const camera = { yaw, pitch, scale: 50, panX: 12, panY: -10 };
+    const next = dragVector(vector, 40, -25, camera);
+    const before = project(vector, camera, 800, 500), after = project(next, camera, 800, 500);
+    close([after.x - before.x, after.y - before.y, after.depth], [40, -25, before.depth]);
+    if (unchanged >= 0) assert.ok(Math.abs(next[unchanged] - vector[unchanged]) < 1e-9);
+  }
+  const limited = dragVector([1e6 - 1, 0, 0], 1e9, 0, { yaw: -Math.PI / 2, pitch: 0, scale: 1 });
+  assert.ok(limited.every(n => Number.isFinite(n) && Math.abs(n) <= 1e6));
 });

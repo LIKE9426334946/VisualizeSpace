@@ -1,13 +1,17 @@
-import { COLORS, coordinates, format, gridStep, interpolate, magnitude, project, cameraBasis, dot } from './math.js';
+import { COLORS, coordinates, format, gridStep, interpolate, magnitude, project, cameraBasis, dot, dragVector } from './math.js';
 
 export class Space {
-  constructor(canvas, { onSelect, onViewChange, onCameraChange, onGridChange }) {
+  constructor(canvas, { onSelect, onViewChange, onCameraChange, onGridChange, onVectorDragStart = () => true, onVectorChange = () => {}, onVectorDragEnd = () => {} }) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.onSelect = onSelect;
     this.onViewChange = onViewChange;
     this.onCameraChange = onCameraChange;
     this.onGridChange = onGridChange;
+    this.onVectorDragStart = onVectorDragStart;
+    this.onVectorChange = onVectorChange;
+    this.onVectorDragEnd = onVectorDragEnd;
+    this.locked = false; this.vectorDrag = null;
     this.camera = { yaw: -0.88, pitch: 0.48, scale: 50, panX: 0, panY: 0 };
     this.options = { rays: true, trails: true, original: true, labels: true, grid: true };
     this.vectors = []; this.targets = []; this.progress = 1; this.selected = -1;
@@ -43,6 +47,7 @@ export class Space {
   }
 
   fit() {
+    if (this.locked) return;
     this.fitScale = Math.min(this.width, this.height) / (this.radius * 2.8);
     this.camera.scale = this.fitScale;
     this.camera.panX = 0; this.camera.panY = 14;
@@ -50,12 +55,14 @@ export class Space {
   }
 
   setView(view) {
+    if (this.locked) return;
     const positions = { iso: [-0.88, 0.48], xy: [-Math.PI / 2, Math.PI / 2], xz: [-Math.PI / 2, 0], yz: [0, 0] };
     [this.camera.yaw, this.camera.pitch] = positions[view] || positions.iso;
     this.fit(); this.onViewChange(view); this.onCameraChange();
   }
 
   zoom(factor) {
+    if (this.vectorDrag) return;
     this.camera.scale = Math.max(this.fitScale * 0.12, Math.min(this.fitScale * 16, this.camera.scale * factor));
     this.requestDraw();
   }
@@ -68,6 +75,17 @@ export class Space {
   setProgress(progress) { this.progress = progress; this.requestDraw(); }
   setSelected(index) { this.selected = index; this.requestDraw(); }
   setOptions(options) { Object.assign(this.options, options); this.requestDraw(); }
+  setLocked(locked) {
+    this.endVectorDrag(); this.locked = locked;
+    this.canvas.classList.toggle('view-locked', locked);
+    if (locked) this.setProgress(0);
+    this.requestDraw();
+  }
+  endVectorDrag() {
+    if (!this.vectorDrag) return;
+    this.vectorDrag = null; this.canvas.classList.remove('vector-dragging');
+    this.onVectorDragEnd();
+  }
 
   line(a, b, color, width = 1, dash = [], alpha = 1, arrow = false) {
     const ctx = this.ctx;
@@ -142,17 +160,19 @@ export class Space {
     this.vectors.forEach((vector, index) => {
       const target = this.targets[index], current = interpolate(vector, target, this.progress);
       const a = this.project(vector), b = this.project(target), p = this.project(current);
-      const color = COLORS[index % COLORS.length], active = this.selected < 0 || this.selected === index, alpha = active ? 1 : 0.16;
+      const color = COLORS[index % COLORS.length], active = this.locked || this.selected < 0 || this.selected === index, alpha = active ? 1 : 0.16;
       if (this.options.rays) {
         if (this.options.original && this.progress > 0.001) segments.push({ a: origin, b: a, color, width: 1, dash: [3, 5], alpha: alpha * 0.25 });
         segments.push({ a: origin, b: p, color, width: active ? 1.7 : 1, alpha: alpha * 0.8, arrow: true });
       }
-      if (this.options.trails) {
+      if (this.options.trails && !this.locked) {
         segments.push({ a, b, color, width: 1.3, dash: [5, 5], alpha: alpha * 0.45 });
         segments.push({ a, b: p, color, width: 2, alpha: alpha * 0.8 });
       }
-      if (this.options.original) points.push({ ...a, vector, index, color, alpha: alpha * 0.8, type: 'original' });
-      points.push({ ...b, vector: target, index, color, alpha: alpha * 0.65, type: 'target' });
+      if (!this.locked) {
+        if (this.options.original) points.push({ ...a, vector, index, color, alpha: alpha * 0.8, type: 'original' });
+        points.push({ ...b, vector: target, index, color, alpha: alpha * 0.65, type: 'target' });
+      }
       points.push({ ...p, vector: current, index, color, alpha, type: 'current' });
     });
     segments.sort((a, b) => (a.a.depth + a.b.depth) - (b.a.depth + b.b.depth));
@@ -176,7 +196,7 @@ export class Space {
       }
       ctx.globalAlpha = 1;
       this.hits.push(point);
-      if (this.options.labels && point.type === 'current' && (this.selected === point.index || (this.selected < 0 && this.vectors.length <= 24))) {
+      if (this.options.labels && point.type === 'current' && (this.selected === point.index || ((this.selected < 0 || this.locked) && this.vectors.length <= 24))) {
         this.label(`v${point.index + 1} ${coordinates(point.vector)}`, point.x + 12, point.y - 9, point.color, true);
       }
     }
@@ -197,18 +217,33 @@ export class Space {
   hit(x, y) {
     return [...this.hits].reverse().find(point => Math.hypot(point.x - x, point.y - y) < 12);
   }
+  editableHit(x, y, radius) {
+    const candidates = this.vectors.map((vector, index) => ({ ...this.project(vector), index }))
+      .map(point => ({ ...point, distance: Math.hypot(point.x - x, point.y - y) }))
+      .filter(point => point.distance < radius);
+    // 重叠时优先拖动表格中选中的向量，其次选择最近端点。
+    return candidates.find(point => point.index === this.selected) || candidates.sort((a, b) => a.distance - b.distance)[0];
+  }
 
   bindControls() {
     const canvas = this.canvas;
     const local = event => { const r = canvas.getBoundingClientRect(); return { x: event.clientX - r.left, y: event.clientY - r.top }; };
     canvas.addEventListener('contextmenu', event => event.preventDefault());
-    canvas.addEventListener('wheel', event => { event.preventDefault(); this.zoom(Math.exp(-Math.max(-150, Math.min(150, event.deltaY)) * 0.002)); this.onCameraChange(); }, { passive: false });
+    canvas.addEventListener('wheel', event => { event.preventDefault(); if (this.vectorDrag) return; this.zoom(Math.exp(-Math.max(-150, Math.min(150, event.deltaY)) * 0.002)); this.onCameraChange(); }, { passive: false });
     canvas.addEventListener('pointerdown', event => {
       canvas.focus({ preventScroll: true }); canvas.setPointerCapture(event.pointerId);
       const p = local(event);
       this.pointers.set(event.pointerId, p);
       this.drag = { x: p.x, y: p.y, moved: false, pan: event.button === 2 || event.shiftKey };
-      if (this.pointers.size > 1) this.drag.moved = true;
+      if (this.pointers.size > 1) { this.drag.moved = true; this.endVectorDrag(); }
+      if (this.locked && this.pointers.size === 1 && event.button === 0) {
+        const hit = this.editableHit(p.x, p.y, event.pointerType === 'touch' ? 24 : 14);
+        if (hit && this.onVectorDragStart(hit.index) !== false) {
+          this.vectorDrag = { pointerId: event.pointerId, index: hit.index, start: p, vector: [...this.vectors[hit.index]], camera: { ...this.camera } };
+          canvas.classList.add('vector-dragging');
+          this.drag.moved = true;
+        }
+      }
       canvas.classList.add('dragging'); this.tooltip.hidden = true;
     });
     canvas.addEventListener('pointermove', event => {
@@ -227,6 +262,14 @@ export class Space {
       const before = [...this.pointers.values()];
       this.pointers.set(event.pointerId, p);
       const after = [...this.pointers.values()];
+      if (this.locked) {
+        const edit = this.vectorDrag;
+        if (edit && edit.pointerId === event.pointerId && after.length === 1) {
+          const vector = dragVector(edit.vector, p.x - edit.start.x, p.y - edit.start.y, edit.camera);
+          this.onVectorChange(edit.index, vector); this.requestDraw();
+        }
+        return;
+      }
       if (after.length > 1) {
         const oldDistance = Math.hypot(before[0].x - before[1].x, before[0].y - before[1].y);
         const newDistance = Math.hypot(after[0].x - after[1].x, after[0].y - after[1].y);
@@ -244,6 +287,7 @@ export class Space {
     });
     const release = event => {
       if (!this.pointers.has(event.pointerId)) return;
+      if (this.vectorDrag?.pointerId === event.pointerId) this.endVectorDrag();
       if (event.type === 'pointerup' && this.pointers.size === 1 && !this.drag.moved && event.button === 0) {
         const p = local(event), hit = this.hit(p.x, p.y); this.onSelect(hit ? hit.index : -1);
       }
@@ -256,6 +300,7 @@ export class Space {
     canvas.addEventListener('keydown', event => {
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', '+', '=', '-', 'Home'].includes(event.key)) return;
       event.preventDefault();
+      if (this.locked && !['+', '=', '-'].includes(event.key)) return;
       if (event.key === 'Home') this.setView('iso');
       else if (['+', '=', '-'].includes(event.key)) this.zoom(event.key === '-' ? 1 / 1.15 : 1.15);
       else {
